@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    .region {
+      stroke: #000; /* Cor do contorno original */
+      stroke-width: 0.5px; /* Largura do contorno original */
+    }
+    .highlight {
+      stroke: #ff0000; /* Cor do contorno quando o mouse passa sobre */
+      stroke-width: 2px; /* Largura do contorno quando o mouse passa sobre */
+    }
+    .state-label {
+      font-size: 12px;
+      fill: #000; /* Cor do texto */
+      text-anchor: middle; /* Centraliza o texto horizontalmente */
+    }
+    .tooltip {
+      position: absolute;
+      background-color: #fff;
+      border: 1px solid #ddd;
+      padding: 5px;
+      border-radius: 4px;
+      pointer-events: none; /* Impede que o tooltip interfira com o mouse */
+      visibility: hidden; /* Inicialmente escondido */
+      font-size: 12px;
+      white-space: nowrap; /* Impede quebra de linha */
+    }
+    .title {
+      font-size: 22px;
+      text-align: center;
+    }
+    .subtitle {
+      font-size: 14px;
+      text-align: center;
+      margin-bottom: 50px;
+    }
+    #map-container {
+      height: 106vh;
+    }
+    #map-svg {
+      width: 100%; /* O SVG ocupa 100% da largura do container */
+      height: 100%; /* O SVG ocupa 100% da altura do container */
+      margin-left: 380px;
+    }
+  </style>
+</head>
+<body>
+  <div id="map-container">
+    <h1 class="title">Taxa de não comparecimento - ENEM 2023</h1>
+    <h3 class="subtitle">Amazonas é o estado que mais sofreu com o não comparecimento de candidatos nos dois dias de provas; Sergipe e Rio Grande do Norte foram os estados com maior comparecimento de candidatos</h3>
+    <svg id="map-svg"></svg> 
+  </div>
+  <div id="tooltip" class="tooltip"></div> <!-- Tooltip container -->
+  <script>
+    // Dados de taxa de não comparecimento por estado
+    const absenteeismData = {
+      "BR-SE": 28,   // Sergipe
+      "BR-RN": 28,   // Rio Grande do Norte
+      "BR-CE": 29,   // Ceará
+      "BR-PB": 30,   // Paraíba
+      "BR-PI": 30,   // Piauí
+      "BR-DF": 31,   // Distrito Federal
+      "BR-MG": 31,   // Minas Gerais
+      "BR-PR": 31,   // Paraná
+      "BR-PE": 31,   // Pernambuco
+      "BR-RS": 31,   // Rio Grande do Sul
+      "BR-SP": 31,   // São Paulo
+      "BR-SC": 32,   // Santa Catarina
+      "BR-BA": 33,   // Bahia
+      "BR-MA": 33,   // Maranhão
+      "BR-AL": 34,   // Alagoas
+      "BR-ES": 34,   // Espírito Santo
+      "BR-PA": 34,   // Pará
+      "BR-TO": 34,   // Tocantins
+      "BR-MS": 35,   // Mato Grosso do Sul
+      "BR-MT": 35,   // Mato Grosso
+      "BR-RJ": 35,   // Rio de Janeiro
+      "BR-GO": 36,   // Goiás
+      "BR-RO": 37,   // Rondônia
+      "BR-RR": 37,   // Roraima
+      "BR-AP": 37,   // Amapá
+      "BR-AC": 38,   // Acre
+      "BR-AM": 49    // Amazonas
+    };
+
+    // Dados de siglas por estado
+    const stateAbbreviations = {
+      "BR-SE": "SE",
+      "BR-RN": "RN",
+      "BR-CE": "CE",
+      "BR-PB": "PB",
+      "BR-PI": "PI",
+      "BR-DF": "DF",
+      "BR-MG": "MG",
+      "BR-PR": "PR",
+      "BR-PE": "PE",
+      "BR-RS": "RS",
+      "BR-SP": "SP",
+      "BR-SC": "SC",
+      "BR-BA": "BA",
+      "BR-MA": "MA",
+      "BR-AL": "AL",
+      "BR-ES": "ES",
+      "BR-PA": "PA",
+      "BR-TO": "TO",
+      "BR-MS": "MS",
+      "BR-MT": "MT",
+      "BR-RJ": "RJ",
+      "BR-GO": "GO",
+      "BR-RO": "RO",
+      "BR-RR": "RR",
+      "BR-AP": "AP",
+      "BR-AC": "AC",
+      "BR-AM": "AM"
+    };
+
+    // Dados de ajustes específicos para a posição das siglas
+    const stateLabelAdjustments = {
+      "BR-PI": { x: 15, y: 15 }, 
+      "BR-PB": { x: 5, y: 2 }, 
+      "BR-RN": { x: 5, y: 0 }, 
+      "BR-DF": { x: 0, y: -9 }, 
+      "BR-RJ": { x: 10, y: 6 }, 
+      "BR-SC": { x: 14, y: -5 },
+      "BR-ES": { x: 6, y: 0 },
+      "BR-AL": { x: 3, y: 4 },
+      "BR-SE": { x: 0, y: 2},
+      "BR-PE": { x: 33, y: 2},
+      "BR-PB": { x: 13, y: 2},
+      "BR-RR": { x: 10, y: 0},
+      "BR-AP": { x: 10, y: 0},
+      "BR-PA": { x: 0, y: 20},
+    };
+
+    // Função para mapear a taxa de não comparecimento para uma cor
+    function colorScale(value) {
+      const max = Math.max(...Object.values(absenteeismData));
+      const min = Math.min(...Object.values(absenteeismData));
+      const scale = d3.scaleSequential(d3.interpolateReds)
+        .domain([min, max])
+      return scale(value);
+    }
+
+    // Carregar e anexar o SVG ao container
+    d3.xml("brazil.svg").then(data => {
+      console.log("SVG carregado"); // Verificação de carregamento do SVG
+
+      const svg = d3.select("#map-svg");
+      if (!svg.empty()) {
+        console.log("SVG selecionado com sucesso"); // Verificação de seleção do SVG
+
+        // Anexa o SVG carregado ao elemento SVG existente
+        svg.node().appendChild(data.documentElement); 
+
+        // Alterando a cor das regiões e adicionando texto
+        svg.selectAll("path")
+           .style("fill", function() {
+             const stateId = d3.select(this).attr("id"); // ID do estado no SVG
+             return colorScale(absenteeismData[stateId] || 0);
+           })
+           .style("stroke", "#000") // Cor do contorno original
+           .style("stroke-width", "0.5px"); // Largura do contorno original
+
+        // Adicionando siglas dos estados
+        svg.selectAll("path")
+           .each(function() {
+             const stateId = d3.select(this).attr("id");
+             const abbreviation = stateAbbreviations[stateId];
+             
+             if (abbreviation) {
+               const bbox = this.getBBox(); // Obtém as coordenadas do retângulo delimitador do estado
+               const adjustment = stateLabelAdjustments[stateId] || { x: 0, y: 0 };
+
+               svg.append("text")
+                  .attr("x", bbox.x + bbox.width / 2 + adjustment.x) // Centraliza o texto horizontalmente com ajuste
+                  .attr("y", bbox.y + bbox.height / 2 + adjustment.y) // Centraliza o texto verticalmente com ajuste
+                  .attr("class", "state-label")
+                  .text(abbreviation);
+             }
+           });
+
+        // Tooltip
+        const tooltip = d3.select("#tooltip");
+
+        // Adicionando interatividade
+        svg.selectAll("path")
+           .on("mouseover", function(event) {
+             const stateId = d3.select(this).attr("id");
+             const absenteeism = absenteeismData[stateId] || 0;
+
+             d3.select(this)
+               .classed("highlight", true); // Adiciona classe de destaque
+
+             // Atualiza e exibe o tooltip
+             tooltip
+               .style("visibility", "visible")
+               .text(`Não compareceram: ${absenteeism}%`)
+               .style("left", `${event.pageX + 10}px`)
+               .style("top", `${event.pageY + 10}px`);
+           })
+           .on("mousemove", function(event) {
+             // Atualiza a posição do tooltip conforme o mouse se move
+             tooltip
+               .style("left", `${event.pageX + 10}px`)
+               .style("top", `${event.pageY + 10}px`);
+           })
+           .on("mouseout", function() {
+             d3.select(this)
+               .classed("highlight", false); // Remove classe de destaque
+
+             // Oculta o tooltip
+             tooltip.style("visibility", "hidden");
+           });
+      } else {
+        console.error("Falha ao selecionar o SVG"); // Erro de seleção
+      }
+    }).catch(error => {
+      console.error("Erro ao carregar o SVG:", error); // Erro de carregamento
+    });
+  </script>
+</body>
+</html>
